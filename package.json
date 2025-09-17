@@ -1,0 +1,18 @@
+{
+  "name": "webdigi5-api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.0.0",
+    "express": "^4.19.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "prisma": "^5.0.0"
+  }
+}
