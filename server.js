@@ -36,12 +36,20 @@ const requireRole = (roles) => (req, res, next) => {
 // GET /products (tous, avec filtres tailles/catégories)
 app.get('/products', async (req, res) => {
   const { category, size } = req.query;
-  let query = supabase.from('products').select('*, product_variants(size, stock_quantity)');
-  if (category) query = query.eq('category_id', category); // Assume category_id en DB
-  if (size) query = query.contains('product_variants', [{ size }]);
+  let query = supabase.from('products').select(`
+    *,
+    product_variants (
+      id,
+      size,
+      stock_quantity,
+      price
+    )
+  `);
+  if (category) query = query.eq('category_id', category);
+  if (size) query = query.eq('product_variants.size', size);
   const { data, error } = await query;
-  if (error) return res.status(500).json({ error });
-  res.json(data);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
 });
 
 // POST /products (admin only, crée produit + variantes tailles)
