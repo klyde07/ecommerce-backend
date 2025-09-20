@@ -5,11 +5,9 @@ const bcrypt = require('bcryptjs');
 const cors = require('cors');
 require('dotenv').config();
 
-const app = express(); // Ajoute cette ligne si absente
+const app = express();
 app.use(cors());
 app.use(express.json());
-
-app.get('/', (req, res) => res.send('API e-commerce en cours...')); // A verifier
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
@@ -34,6 +32,9 @@ const requireRole = (roles) => (req, res, next) => {
   next();
 };
 
+// Route racine (pour éviter "Cannot GET /")
+app.get('/', (req, res) => res.send('API e-commerce en cours...'));
+
 // Route GET /products
 app.get('/products', async (req, res) => {
   const { category, size } = req.query;
@@ -52,16 +53,60 @@ app.get('/products', async (req, res) => {
         price
       )
     `)
-    .eq('is_active', true); // Filtre actif
+    .eq('is_active', true);
   if (category) query = query.eq('category_id', category);
   if (size) query = query.eq('product_variants.size', size);
   const { data, error } = await query;
-  console.log('Supabase data:', data); // Ajoute pour déboguer
-  console.log('Supabase error:', error); // Ajoute pour voir les erreurs
   if (error) return res.status(500).json({ error: error.message });
   res.json(data || []);
 });
-// Autres routes (POST /products, PUT, DELETE, auth) restent ici comme avant...
+
+// Route POST /products (admin only, crée produit + variantes)
+app.post('/products', authenticateToken, requireRole(['admin']), async (req, res) => {
+  const { name, description, base_price, category_id, variants } = req.body;
+  const { data, error } = await supabase.from('products').insert({ name, description, base_price, category_id }).select().single();
+  if (error) return res.status(500).json({ error });
+  for (let v of variants) {
+    await supabase.from('product_variants').insert({ product_id: data.id, ...v });
+  }
+  res.json(data);
+});
+
+// Route PUT /products/:id (update stock, vendeur/admin)
+app.put('/products/:id', authenticateToken, requireRole(['admin', 'vendeur']), async (req, res) => {
+  const { id } = req.params;
+  const { stock_quantity, size } = req.body;
+  const { error } = await supabase.from('product_variants').update({ stock_quantity }).eq('product_id', id).eq('size', size);
+  if (error) return res.status(500).json({ error });
+  res.json({ message: 'Stock mis à jour' });
+});
+
+// Route DELETE /products/:id (admin only)
+app.delete('/products/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from('products').delete().eq('id', id);
+  if (error) return res.status(500).json({ error });
+  res.json({ message: 'Produit supprimé' });
+});
+
+// Route POST /auth/signup
+app.post('/auth/signup', async (req, res) => {
+  const { email, password, role } = req.body;
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const { data, error } = await supabase.from('users').insert({ email, password_hash: hashedPassword, role }).select().single();
+  if (error) return res.status(400).json({ error });
+  const token = jwt.sign({ id: data.id }, JWT_SECRET, { expiresIn: '1h' });
+  res.json({ token });
+});
+
+// Route POST /auth/login
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
+  if (!user || !await bcrypt.compare(password, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
+  const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '1h' });
+  res.json({ token, role: user.role });
+});
 
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
