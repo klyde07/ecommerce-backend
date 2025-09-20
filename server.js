@@ -50,17 +50,15 @@ app.get('/products', async (req, res) => {
         price
       )
     `)
-    .eq('is_active', true);
+    .eq('is_active', true); // Filtre actif
   if (category) query = query.eq('category_id', category);
   if (size) query = query.eq('product_variants.size', size);
   const { data, error } = await query;
-  if (error) {
-    console.error('Supabase error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
+  console.log('Supabase data:', data); // Ajoute pour déboguer
+  console.log('Supabase error:', error); // Ajoute pour voir les erreurs
+  if (error) return res.status(500).json({ error: error.message });
   res.json(data || []);
 });
-
 // Autres routes (POST /products, PUT, DELETE, auth) restent ici comme avant...
 
 // Démarrage du serveur
