@@ -108,6 +108,70 @@ app.post('/auth/login', async (req, res) => {
   res.json({ token, role: user.role });
 });
 
+// Route GET /orders (toutes les commandes, admin only)
+app.get('/orders', authenticateToken, requireRole(['admin']), async (req, res) => {
+  const { data, error } = await supabase.from('orders').select(`
+    *,
+    order_items (
+      id,
+      product_variant_id,
+      quantity,
+      unit_price
+    )
+  `);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+// Route GET /orders/:id (détail d'une commande, client ou admin)
+app.get('/orders/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { data, error } = await supabase.from('orders').select(`
+    *,
+    order_items (
+      id,
+      product_variant_id,
+      quantity,
+      unit_price
+    )
+  `).eq('id', id).single();
+  if (error) return res.status(404).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'Commande non trouvée' });
+  res.json(data);
+});
+
+// Route POST /orders (crée une commande, client)
+app.post('/orders', authenticateToken, requireRole(['customer']), async (req, res) => {
+  const { user_id, order_items } = req.body; // order_items: array [{ product_variant_id, quantity }]
+  const { data: order, error: orderError } = await supabase.from('orders').insert({
+    user_id,
+    total_amount: 0, // À calculer après
+    status: 'pending'
+  }).select().single();
+  if (orderError) return res.status(500).json({ error: orderError.message });
+
+  let total = 0;
+  const itemsToInsert = order_items.map(item => {
+    total += item.quantity * (item.unit_price || 0);
+    return { order_id: order.id, ...item };
+  });
+  const { error: itemsError } = await supabase.from('order_items').insert(itemsToInsert);
+  if (itemsError) return res.status(500).json({ error: itemsError.message });
+
+  await supabase.from('orders').update({ total_amount: total }).eq('id', order.id);
+  res.json(order);
+});
+
+// Route PUT /orders/:id (met à jour le statut, admin)
+app.put('/orders/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const { error } = await supabase.from('orders').update({ status, updated_at: 'now()' }).eq('id', id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ message: 'Statut mis à jour' });
+});
+
+
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server sur port ${PORT}`));
