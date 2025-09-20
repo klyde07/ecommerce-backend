@@ -9,6 +9,8 @@ const app = express(); // Ajoute cette ligne si absente
 app.use(cors());
 app.use(express.json());
 
+app.get('/', (req, res) => res.send('API e-commerce en cours...')); // A verifier
+
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
