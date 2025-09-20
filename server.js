@@ -225,8 +225,15 @@ app.post('/shopping-carts', authenticateToken, requireRole(['customer']), async 
 // Route DELETE /shopping-carts/:id (supprime un item, client)
 app.delete('/shopping-carts/:id', authenticateToken, requireRole(['customer']), async (req, res) => {
   const { id } = req.params;
-  const { error } = await supabase.from('shopping_carts').delete().eq('id', id).eq('user_id', req.user.id);
-  if (error) return res.status(500).json({ error: error.message });
+  console.log('Deleting cart item:', { id, userId: req.user.id }); // Débogage
+  const { error, data } = await supabase.from('shopping_carts').delete().eq('id', id).eq('user_id', req.user.id);
+  if (error) {
+    console.error('Delete error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  if (!data || data.length === 0) {
+    return res.status(404).json({ error: 'Item non trouvé ou non autorisé' });
+  }
   res.json({ message: 'Item supprimé du panier' });
 });
 
