@@ -189,13 +189,37 @@ app.get('/shopping-carts', authenticateToken, requireRole(['customer']), async (
 // Route POST /shopping-carts (ajoute un item, client)
 app.post('/shopping-carts', authenticateToken, requireRole(['customer']), async (req, res) => {
   const { product_variant_id, quantity } = req.body;
-  const { error } = await supabase.from('shopping_carts').insert({
-    user_id: req.user.id,
-    product_variant_id,
-    quantity
-  }).upsert(); // upsert pour éviter doublons
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ message: 'Item ajouté au panier' });
+  if (!product_variant_id || !quantity || quantity <= 0) {
+    return res.status(400).json({ error: 'product_variant_id et quantity valides requis' });
+  }
+  try {
+    // Vérifie si l'item existe déjà
+    const { data: existing } = await supabase
+      .from('shopping_carts')
+      .select('quantity')
+      .eq('user_id', req.user.id)
+      .eq('product_variant_id', product_variant_id)
+      .single();
+    if (existing) {
+      const newQuantity = existing.quantity + quantity;
+      const { error } = await supabase
+        .from('shopping_carts')
+        .update({ quantity: newQuantity })
+        .eq('user_id', req.user.id)
+        .eq('product_variant_id', product_variant_id);
+      if (error) return res.status(500).json({ error: error.message });
+    } else {
+      const { error } = await supabase.from('shopping_carts').insert({
+        user_id: req.user.id,
+        product_variant_id,
+        quantity
+      });
+      if (error) return res.status(500).json({ error: error.message });
+    }
+    res.json({ message: 'Item ajouté ou mis à jour dans le panier' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur interne', details: err.message });
+  }
 });
 
 // Route DELETE /shopping-carts/:id (supprime un item, client)
