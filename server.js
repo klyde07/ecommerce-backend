@@ -231,10 +231,12 @@ app.delete('/shopping-carts/:id', authenticateToken, requireRole(['customer']), 
     console.error('Delete error:', error.message);
     return res.status(500).json({ error: error.message });
   }
-  if (!data || data.length === 0) {
+  // Si pas d'erreur et data est vide, c'est une suppression réussie
+  if (!error && (!data || data.length === 0)) {
+    res.json({ message: 'Item supprimé du panier' });
+  } else {
     return res.status(404).json({ error: 'Item non trouvé ou non autorisé' });
   }
-  res.json({ message: 'Item supprimé du panier' });
 });
 
 // Démarrage du serveur
