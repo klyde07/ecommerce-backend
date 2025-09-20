@@ -171,6 +171,40 @@ app.put('/orders/:id', authenticateToken, requireRole(['admin']), async (req, re
   res.json({ message: 'Statut mis à jour' });
 });
 
+// Route GET /shopping-carts (liste du panier, client)
+app.get('/shopping-carts', authenticateToken, requireRole(['customer']), async (req, res) => {
+  const { data, error } = await supabase.from('shopping_carts').select(`
+    *,
+    product_variants (
+      id,
+      size,
+      stock_quantity,
+      price
+    )
+  `).eq('user_id', req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+// Route POST /shopping-carts (ajoute un item, client)
+app.post('/shopping-carts', authenticateToken, requireRole(['customer']), async (req, res) => {
+  const { product_variant_id, quantity } = req.body;
+  const { error } = await supabase.from('shopping_carts').insert({
+    user_id: req.user.id,
+    product_variant_id,
+    quantity
+  }).upsert(); // upsert pour éviter doublons
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ message: 'Item ajouté au panier' });
+});
+
+// Route DELETE /shopping-carts/:id (supprime un item, client)
+app.delete('/shopping-carts/:id', authenticateToken, requireRole(['customer']), async (req, res) => {
+  const { id } = req.params;
+  const { error } = await supabase.from('shopping_carts').delete().eq('id', id).eq('user_id', req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ message: 'Item supprimé du panier' });
+});
 
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
