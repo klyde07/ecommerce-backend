@@ -109,7 +109,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // Route GET /orders (toutes les commandes, admin only)
-app.get('/orders', authenticateToken, requireRole(['admin']), async (req, res) => {
+app.get('/orders', authenticateToken, requireRole(['admin', 'customer']), async (req, res) => {
   const { data, error } = await supabase.from('orders').select(`
     *,
     order_items (
