@@ -7,10 +7,10 @@ require('dotenv').config();
 
 const app = express();
 app.use(express.json());
-// app.use(cors({
-//   origin: process.env.CORS_ORIGIN || 'http://localhost:3000' //Ajouter pour le front end
-// }));
-app.use(cors({ origin: '*' }))
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:3000' //Ajouter pour le front end
+}));
+
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
