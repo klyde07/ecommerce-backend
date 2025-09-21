@@ -11,7 +11,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -37,7 +36,6 @@ const requireRole = (roles) => (req, res, next) => {
 
 // Route racine (pour éviter "Cannot GET /")
 app.get('/', (req, res) => res.send('API e-commerce en cours...'));
-
 
 // Route GET /products
 app.get('/products', async (req, res) => {
@@ -74,7 +72,6 @@ app.get('/products', async (req, res) => {
   console.log('Données renvoyées:', data);
   res.json(data || []);
 });
-
 
 // Route POST /products (admin only, crée produit + variantes)
 app.post('/products', authenticateToken, requireRole(['admin']), async (req, res) => {
@@ -155,26 +152,52 @@ app.get('/orders/:id', authenticateToken, async (req, res) => {
   res.json(data);
 });
 
-// Route POST /orders (crée une commande, client)
+// Route POST /orders (crée une commande, client) - Modifiée
 app.post('/orders', authenticateToken, requireRole(['customer']), async (req, res) => {
-  const { user_id, order_items } = req.body; // order_items: array [{ product_variant_id, quantity }]
-  const { data: order, error: orderError } = await supabase.from('orders').insert({
-    user_id,
-    total_amount: 0, // À calculer après
-    status: 'pending'
-  }).select().single();
-  if (orderError) return res.status(500).json({ error: orderError.message });
+  const { items } = req.body; // items: array [{ product_variant_id, quantity }]
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Items de commande invalides' });
+  }
+  try {
+    // Crée la commande
+    const { data: order, error: orderError } = await supabase.from('orders').insert({
+      user_id: req.user.id,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      total_amount: 0 // À calculer après
+    }).select().single();
+    if (orderError) throw orderError;
 
-  let total = 0;
-  const itemsToInsert = order_items.map(item => {
-    total += item.quantity * (item.unit_price || 0);
-    return { order_id: order.id, ...item };
-  });
-  const { error: itemsError } = await supabase.from('order_items').insert(itemsToInsert);
-  if (itemsError) return res.status(500).json({ error: itemsError.message });
+    // Calcule le total et insère les items
+    let total = 0;
+    const itemsToInsert = [];
+    for (const item of items) {
+      const { product_variant_id, quantity } = item;
+      const { data: variant } = await supabase
+        .from('product_variants')
+        .select('price')
+        .eq('id', product_variant_id)
+        .single();
+      if (!variant) throw new Error(`Variante ${product_variant_id} non trouvée`);
+      const itemTotal = variant.price * quantity;
+      total += itemTotal;
+      itemsToInsert.push({ order_id: order.id, product_variant_id, quantity, unit_price: variant.price });
+    }
+    const { error: itemsError } = await supabase.from('order_items').insert(itemsToInsert);
+    if (itemsError) throw itemsError;
 
-  await supabase.from('orders').update({ total_amount: total }).eq('id', order.id);
-  res.json(order);
+    // Met à jour le total de la commande
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ total_amount: total })
+      .eq('id', order.id);
+    if (updateError) throw updateError;
+
+    res.json({ message: 'Commande enregistrée avec succès', order_id: order.id });
+  } catch (err) {
+    console.error('Erreur commande:', err.message);
+    res.status(500).json({ error: 'Erreur lors de la commande', details: err.message });
+  }
 });
 
 // Route PUT /orders/:id (met à jour le statut, admin)
