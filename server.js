@@ -7,7 +7,7 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000' //Ajouter pour le front end
+  origin: process.env.CORS_ORIGIN || 'https://webdigi5-ecommerce-production.up.railway.app'
 }));
 app.use(express.json());
 
