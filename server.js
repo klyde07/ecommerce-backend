@@ -254,6 +254,22 @@ app.delete('/shopping-carts/:id', authenticateToken, requireRole(['customer']), 
   }
 });
 
+// Route PUT /shopping-carts/:id (met à jour la quantité, client)
+app.put('/shopping-carts/:id', authenticateToken, requireRole(['customer']), async (req, res) => {
+  const { id } = req.params;
+  const { quantity } = req.body;
+  if (!quantity || quantity <= 0) {
+    return res.status(400).json({ error: 'Quantité valide requise' });
+  }
+  const { error } = await supabase
+    .from('shopping_carts')
+    .update({ quantity })
+    .eq('id', id)
+    .eq('user_id', req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ message: 'Quantité mise à jour' });
+});
+
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server sur port ${PORT}`));
