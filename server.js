@@ -293,6 +293,17 @@ app.put('/shopping-carts/:id', authenticateToken, requireRole(['customer']), asy
   res.json({ message: 'Quantité mise à jour' });
 });
 
+// Nouvelle route GET /orders
+app.get('/orders', authenticateToken, requireRole(['customer']), async (req, res) => {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('user_id', req.user.id)
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server sur port ${PORT}`));
