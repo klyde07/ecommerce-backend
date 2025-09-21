@@ -38,9 +38,15 @@ const requireRole = (roles) => (req, res, next) => {
 // Route racine (pour éviter "Cannot GET /")
 app.get('/', (req, res) => res.send('API e-commerce en cours...'));
 
+
 // Route GET /products
 app.get('/products', async (req, res) => {
-  console.log('Requête reçue pour /products', { query: req.query, origin: req.headers.origin });
+  console.log('Requête reçue pour /products', {
+    query: req.query,
+    origin: req.headers.origin,
+    referer: req.headers.referer,
+    host: req.headers.host
+  });
   const { category, size } = req.query;
   let query = supabase
     .from('products')
@@ -68,6 +74,7 @@ app.get('/products', async (req, res) => {
   console.log('Données renvoyées:', data);
   res.json(data || []);
 });
+
 
 // Route POST /products (admin only, crée produit + variantes)
 app.post('/products', authenticateToken, requireRole(['admin']), async (req, res) => {
