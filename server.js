@@ -40,6 +40,7 @@ app.get('/', (req, res) => res.send('API e-commerce en cours...'));
 
 // Route GET /products
 app.get('/products', async (req, res) => {
+  console.log('Requête reçue pour /products', { query: req.query, origin: req.headers.origin });
   const { category, size } = req.query;
   let query = supabase
     .from('products')
@@ -60,7 +61,11 @@ app.get('/products', async (req, res) => {
   if (category) query = query.eq('category_id', category);
   if (size) query = query.eq('product_variants.size', size);
   const { data, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error('Erreur Supabase:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  console.log('Données renvoyées:', data);
   res.json(data || []);
 });
 
