@@ -6,12 +6,28 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
+
+// PAR CECI :
 app.use(cors({
-  origin: [
-    'https://webdigi5-ecommerce-production.up.railway.app',
-    'http://localhost:3000'
-  ],
-  credentials: true
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'https://webdigi5-ecommerce-production.up.railway.app',
+      'http://localhost:3000',
+      'https://webdigi5-ecommerce-production.up.railway.app'
+    ];
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json());
 
