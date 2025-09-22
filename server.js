@@ -108,16 +108,23 @@ app.post('/auth/signup', async (req, res) => {
   if (!email || !password || !first_name || !last_name) {
     return res.status(400).json({ error: 'Tous les champs sont requis' });
   }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Le mot de passe doit avoir au moins 6 caractères' });
+  }
   const role = 'customer'; // Par défaut
+  const redirectTo = 'https://webdigi5-ecommerce-production.up.railway.app/verify-email'; // Ton URL
   try {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { first_name, last_name, role } }
+      options: { 
+        data: { first_name, last_name, role },
+        emailRedirectTo: redirectTo // Redirige après confirmation
+      }
     });
     if (error) return res.status(400).json({ error: error.message });
 
-    // Insère dans la table users avec les champs requis
+    // Insère dans la table users (email_verified = false initialement)
     const { error: userError } = await supabase
       .from('users')
       .insert({ 
@@ -129,7 +136,7 @@ app.post('/auth/signup', async (req, res) => {
       });
     if (userError) return res.status(500).json({ error: userError.message });
 
-    res.status(201).json({ message: 'Inscription réussie', user: data.user });
+    res.status(201).json({ message: 'Inscription réussie. Vérifiez votre email.', user: data.user });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
   }
