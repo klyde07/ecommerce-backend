@@ -243,6 +243,14 @@ app.post('/shopping-carts', authenticateToken, requirePermission('add_to_cart'),
   }
 });
 
+// Route GET /admin/users (admin only)
+app.get('/admin/users', authenticateToken, requirePermission('view_users'), async (req, res) => {
+  const { data, error } = await supabase.from('users').select('id, email, first_name, last_name, role, created_at');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server sur port ${PORT}`));
