@@ -7,7 +7,11 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'https://webdigi5-ecommerce-production.up.railway.app'
+  origin: [
+    'https://webdigi5-ecommerce-production.up.railway.app',
+    'http://localhost:3000'
+  ],
+  credentials: true
 }));
 app.use(express.json());
 
