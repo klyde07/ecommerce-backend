@@ -31,22 +31,36 @@ const authenticateToken = (req, res, next) => {
 
 // Ajoute ceci dans server.js après authenticateToken
 app.post('/auth/signup', async (req, res) => {
-  const { email, password, name, role } = req.body;
-  if (!email || !password || !name || !role) {
+  const { email, password, first_name, last_name } = req.body;
+  if (!email || !password || !first_name || !last_name) {
     return res.status(400).json({ error: 'Tous les champs sont requis' });
   }
-  if (!['client', 'admin', 'vendeur'].includes(role)) {
-    return res.status(400).json({ error: 'Rôle invalide' });
-  }
+  const role = 'customer'; // Par défaut
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { first_name, last_name, role } }
+    });
+    if (error) return res.status(400).json({ error: error.message });
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { name, role }
-    }
-  });
-  if (error) return res.status(400).json({ error: error.message });
+    // Insère dans la table users
+    const { error: userError } = await supabase
+      .from('users')
+      .insert({ 
+        id: data.user.id, 
+        email, 
+        first_name, 
+        last_name, 
+        role 
+      });
+    if (userError) return res.status(500).json({ error: userError.message });
+
+    res.status(201).json({ message: 'Inscription réussie', user: data.user });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
   // Ajoute l'utilisateur dans la table users avec rôle
   const { error: userError } = await supabase
