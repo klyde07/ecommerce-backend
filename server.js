@@ -17,7 +17,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Middleware auth (vérifie JWT et rôle)
+// Middleware auth (vérifie JWT et récupère rôle)
 const authenticateToken = (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token requis' });
@@ -29,23 +29,26 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Middleware pour vérifier le rôle
-const requireRole = (roles) => (req, res, next) => {
-  if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Rôle insuffisant' });
+// Middleware pour vérifier une permission spécifique
+const requirePermission = (permissionName) => async (req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: 'Authentification requise' });
+  const { data: permissions } = await supabase
+    .from('role_permissions')
+    .select('permission_id')
+    .eq('role', req.user.role)
+    .join('permissions', 'permissions.id = role_permissions.permission_id')
+    .eq('permissions.name', permissionName);
+  if (!permissions || permissions.length === 0) {
+    return res.status(403).json({ error: 'Permission refusée' });
+  }
   next();
 };
 
-// Route racine (pour éviter "Cannot GET /")
+// Route racine
 app.get('/', (req, res) => res.send('API e-commerce en cours...'));
 
 // Route GET /products
-app.get('/products', async (req, res) => {
-  console.log('Requête reçue pour /products', {
-    query: req.query,
-    origin: req.headers.origin,
-    referer: req.headers.referer,
-    host: req.headers.host
-  });
+app.get('/products', authenticateToken, requirePermission('view_products'), async (req, res) => {
   const { category, size } = req.query;
   let query = supabase
     .from('products')
@@ -66,16 +69,12 @@ app.get('/products', async (req, res) => {
   if (category) query = query.eq('category_id', category);
   if (size) query = query.eq('product_variants.size', size);
   const { data, error } = await query;
-  if (error) {
-    console.error('Erreur Supabase:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-  console.log('Données renvoyées:', data);
+  if (error) return res.status(500).json({ error: error.message });
   res.json(data || []);
 });
 
-// Route POST /products (admin only, crée produit + variantes)
-app.post('/products', authenticateToken, requireRole(['admin']), async (req, res) => {
+// Route POST /products (admin only)
+app.post('/products', authenticateToken, requirePermission('manage_products'), async (req, res) => {
   const { name, description, base_price, category_id, variants } = req.body;
   const { data, error } = await supabase.from('products').insert({ name, description, base_price, category_id }).select().single();
   if (error) return res.status(500).json({ error });
@@ -85,8 +84,8 @@ app.post('/products', authenticateToken, requireRole(['admin']), async (req, res
   res.json(data);
 });
 
-// Route PUT /products/:id (update stock, vendeur/admin)
-app.put('/products/:id', authenticateToken, requireRole(['admin', 'vendeur']), async (req, res) => {
+// Route PUT /products/:id (vendeur/admin)
+app.put('/products/:id', authenticateToken, requirePermission('manage_stocks'), async (req, res) => {
   const { id } = req.params;
   const { stock_quantity, size } = req.body;
   const { error } = await supabase.from('product_variants').update({ stock_quantity }).eq('product_id', id).eq('size', size);
@@ -95,7 +94,7 @@ app.put('/products/:id', authenticateToken, requireRole(['admin', 'vendeur']), a
 });
 
 // Route DELETE /products/:id (admin only)
-app.delete('/products/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+app.delete('/products/:id', authenticateToken, requirePermission('manage_products'), async (req, res) => {
   const { id } = req.params;
   const { error } = await supabase.from('products').delete().eq('id', id);
   if (error) return res.status(500).json({ error });
@@ -112,28 +111,18 @@ app.post('/auth/signup', async (req, res) => {
     return res.status(400).json({ error: 'Le mot de passe doit avoir au moins 6 caractères' });
   }
   const role = 'customer'; // Par défaut
-  const redirectTo = 'https://webdigi5-ecommerce-production.up.railway.app/verify-email'; // Ton URL
+  const redirectTo = 'https://webdigi5-ecommerce-production.up.railway.app/verify-email';
   try {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { 
-        data: { first_name, last_name, role },
-        emailRedirectTo: redirectTo // Redirige après confirmation
-      }
+      options: { data: { first_name, last_name, role }, emailRedirectTo: redirectTo }
     });
     if (error) return res.status(400).json({ error: error.message });
 
-    // Insère dans la table users (email_verified = false initialement)
     const { error: userError } = await supabase
       .from('users')
-      .insert({ 
-        id: data.user.id, 
-        email, 
-        first_name, 
-        last_name, 
-        role 
-      });
+      .insert({ id: data.user.id, email, first_name, last_name, role });
     if (userError) return res.status(500).json({ error: userError.message });
 
     res.status(201).json({ message: 'Inscription réussie. Vérifiez votre email.', user: data.user });
@@ -146,14 +135,14 @@ app.post('/auth/signup', async (req, res) => {
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
-  if (!user || !await bcrypt.compare(password, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!user || !await bcrypt.compare(password, user.password_hash)) return res.status(401).json({ error: 'Identifiants invalides' });
   const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '1h' });
   res.json({ token, role: user.role });
 });
 
-// Route GET /orders (toutes les commandes, admin only)
-app.get('/orders', authenticateToken, requireRole(['admin', 'customer']), async (req, res) => {
-  const { data, error } = await supabase.from('orders').select(`
+// Route GET /orders (toutes commandes pour admin/vendeur, personnelles pour client)
+app.get('/orders', authenticateToken, async (req, res) => {
+  let query = supabase.from('orders').select(`
     *,
     order_items (
       id,
@@ -162,53 +151,36 @@ app.get('/orders', authenticateToken, requireRole(['admin', 'customer']), async 
       unit_price
     )
   `);
+  if (req.user.role === 'client') {
+    query = query.eq('user_id', req.user.id).requirePermission('view_orders');
+  } else {
+    query = query.requirePermission('view_all_orders');
+  }
+  const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
   res.json(data || []);
 });
 
-// Route GET /orders/:id (détail d'une commande, client ou admin)
-app.get('/orders/:id', authenticateToken, async (req, res) => {
-  const { id } = req.params;
-  const { data, error } = await supabase.from('orders').select(`
-    *,
-    order_items (
-      id,
-      product_variant_id,
-      quantity,
-      unit_price
-    )
-  `).eq('id', id).single();
-  if (error) return res.status(404).json({ error: error.message });
-  if (!data) return res.status(404).json({ error: 'Commande non trouvée' });
-  res.json(data);
-});
-
-// Route POST /orders (crée une commande, client) - Modifiée
-app.post('/orders', authenticateToken, requireRole(['customer']), async (req, res) => {
-  const { items } = req.body; // items: array [{ product_variant_id, quantity }]
+// Route POST /orders (client only)
+app.post('/orders', authenticateToken, requirePermission('create_order'), async (req, res) => {
+  const { items } = req.body;
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Items de commande invalides' });
   }
   try {
-    // Crée la commande
     const { data: order, error: orderError } = await supabase.from('orders').insert({
       user_id: req.user.id,
       status: 'pending',
       created_at: new Date().toISOString(),
-      total_amount: 0 // À calculer après
+      total_amount: 0
     }).select().single();
     if (orderError) throw orderError;
 
-    // Calcule le total et insère les items
     let total = 0;
     const itemsToInsert = [];
     for (const item of items) {
       const { product_variant_id, quantity } = item;
-      const { data: variant } = await supabase
-        .from('product_variants')
-        .select('price')
-        .eq('id', product_variant_id)
-        .single();
+      const { data: variant } = await supabase.from('product_variants').select('price').eq('id', product_variant_id).single();
       if (!variant) throw new Error(`Variante ${product_variant_id} non trouvée`);
       const itemTotal = variant.price * quantity;
       total += itemTotal;
@@ -217,11 +189,7 @@ app.post('/orders', authenticateToken, requireRole(['customer']), async (req, re
     const { error: itemsError } = await supabase.from('order_items').insert(itemsToInsert);
     if (itemsError) throw itemsError;
 
-    // Met à jour le total de la commande
-    const { error: updateError } = await supabase
-      .from('orders')
-      .update({ total_amount: total })
-      .eq('id', order.id);
+    const { error: updateError } = await supabase.from('orders').update({ total_amount: total }).eq('id', order.id);
     if (updateError) throw updateError;
 
     res.json({ message: 'Commande enregistrée avec succès', order_id: order.id });
@@ -231,8 +199,8 @@ app.post('/orders', authenticateToken, requireRole(['customer']), async (req, re
   }
 });
 
-// Route PUT /orders/:id (met à jour le statut, admin)
-app.put('/orders/:id', authenticateToken, requireRole(['admin']), async (req, res) => {
+// Autres routes (simplifiées, à ajuster avec permissions similaires)
+app.put('/orders/:id', authenticateToken, requirePermission('update_order_status'), async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   const { error } = await supabase.from('orders').update({ status, updated_at: 'now()' }).eq('id', id);
@@ -240,8 +208,7 @@ app.put('/orders/:id', authenticateToken, requireRole(['admin']), async (req, re
   res.json({ message: 'Statut mis à jour' });
 });
 
-// Route GET /shopping-carts (liste du panier, client)
-app.get('/shopping-carts', authenticateToken, requireRole(['customer']), async (req, res) => {
+app.get('/shopping-carts', authenticateToken, requirePermission('view_cart'), async (req, res) => {
   const { data, error } = await supabase.from('shopping_carts').select(`
     *,
     product_variants (
@@ -255,84 +222,25 @@ app.get('/shopping-carts', authenticateToken, requireRole(['customer']), async (
   res.json(data || []);
 });
 
-// Route POST /shopping-carts (ajoute un item, client)
-app.post('/shopping-carts', authenticateToken, requireRole(['customer']), async (req, res) => {
+app.post('/shopping-carts', authenticateToken, requirePermission('add_to_cart'), async (req, res) => {
   const { product_variant_id, quantity } = req.body;
   if (!product_variant_id || !quantity || quantity <= 0) {
     return res.status(400).json({ error: 'product_variant_id et quantity valides requis' });
   }
   try {
-    // Vérifie si l'item existe déjà
-    const { data: existing } = await supabase
-      .from('shopping_carts')
-      .select('quantity')
-      .eq('user_id', req.user.id)
-      .eq('product_variant_id', product_variant_id)
-      .single();
+    const { data: existing } = await supabase.from('shopping_carts').select('quantity').eq('user_id', req.user.id).eq('product_variant_id', product_variant_id).single();
     if (existing) {
       const newQuantity = existing.quantity + quantity;
-      const { error } = await supabase
-        .from('shopping_carts')
-        .update({ quantity: newQuantity })
-        .eq('user_id', req.user.id)
-        .eq('product_variant_id', product_variant_id);
+      const { error } = await supabase.from('shopping_carts').update({ quantity: newQuantity }).eq('user_id', req.user.id).eq('product_variant_id', product_variant_id);
       if (error) return res.status(500).json({ error: error.message });
     } else {
-      const { error } = await supabase.from('shopping_carts').insert({
-        user_id: req.user.id,
-        product_variant_id,
-        quantity
-      });
+      const { error } = await supabase.from('shopping_carts').insert({ user_id: req.user.id, product_variant_id, quantity });
       if (error) return res.status(500).json({ error: error.message });
     }
     res.json({ message: 'Item ajouté ou mis à jour dans le panier' });
   } catch (err) {
     res.status(500).json({ error: 'Erreur interne', details: err.message });
   }
-});
-
-// Route DELETE /shopping-carts/:id (supprime un item, client)
-app.delete('/shopping-carts/:id', authenticateToken, requireRole(['customer']), async (req, res) => {
-  const { id } = req.params;
-  console.log('Deleting cart item:', { id, userId: req.user.id }); // Débogage
-  const { error, data } = await supabase.from('shopping_carts').delete().eq('id', id).eq('user_id', req.user.id);
-  if (error) {
-    console.error('Delete error:', error.message);
-    return res.status(500).json({ error: error.message });
-  }
-  // Si pas d'erreur et data est vide, c'est une suppression réussie
-  if (!error && (!data || data.length === 0)) {
-    res.json({ message: 'Item supprimé du panier' });
-  } else {
-    return res.status(404).json({ error: 'Item non trouvé ou non autorisé' });
-  }
-});
-
-// Route PUT /shopping-carts/:id (met à jour la quantité, client)
-app.put('/shopping-carts/:id', authenticateToken, requireRole(['customer']), async (req, res) => {
-  const { id } = req.params;
-  const { quantity } = req.body;
-  if (!quantity || quantity <= 0) {
-    return res.status(400).json({ error: 'Quantité valide requise' });
-  }
-  const { error } = await supabase
-    .from('shopping_carts')
-    .update({ quantity })
-    .eq('id', id)
-    .eq('user_id', req.user.id);
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ message: 'Quantité mise à jour' });
-});
-
-// Nouvelle route GET /orders
-app.get('/orders', authenticateToken, requireRole(['customer']), async (req, res) => {
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('user_id', req.user.id)
-    .order('created_at', { ascending: false });
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
 });
 
 // Démarrage du serveur
