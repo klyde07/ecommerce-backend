@@ -29,6 +29,34 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Ajoute ceci dans server.js après authenticateToken
+app.post('/auth/signup', async (req, res) => {
+  const { email, password, name, role } = req.body;
+  if (!email || !password || !name || !role) {
+    return res.status(400).json({ error: 'Tous les champs sont requis' });
+  }
+  if (!['client', 'admin', 'vendeur'].includes(role)) {
+    return res.status(400).json({ error: 'Rôle invalide' });
+  }
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { name, role }
+    }
+  });
+  if (error) return res.status(400).json({ error: error.message });
+
+  // Ajoute l'utilisateur dans la table users avec rôle
+  const { error: userError } = await supabase
+    .from('users')
+    .insert({ id: data.user.id, email, name, role });
+  if (userError) return res.status(500).json({ error: userError.message });
+
+  res.status(201).json({ message: 'Inscription réussie', user: data.user });
+});
+
 const requireRole = (roles) => (req, res, next) => {
   if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Rôle insuffisant' });
   next();
