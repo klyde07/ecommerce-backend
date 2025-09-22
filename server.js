@@ -29,48 +29,7 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Ajoute ceci dans server.js après authenticateToken
-app.post('/auth/signup', async (req, res) => {
-  const { email, password, first_name, last_name } = req.body;
-  if (!email || !password || !first_name || !last_name) {
-    return res.status(400).json({ error: 'Tous les champs sont requis' });
-  }
-  const role = 'customer'; // Par défaut
-  try {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { first_name, last_name, role } }
-    });
-    if (error) return res.status(400).json({ error: error.message });
-
-    // Insère dans la table users
-    const { error: userError } = await supabase
-      .from('users')
-      .insert({ 
-        id: data.user.id, 
-        email, 
-        first_name, 
-        last_name, 
-        role 
-      });
-    if (userError) return res.status(500).json({ error: userError.message });
-
-    res.status(201).json({ message: 'Inscription réussie', user: data.user });
-  } catch (err) {
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-  // Ajoute l'utilisateur dans la table users avec rôle
-  const { error: userError } = await supabase
-    .from('users')
-    .insert({ id: data.user.id, email, name, role });
-  if (userError) return res.status(500).json({ error: userError.message });
-
-  res.status(201).json({ message: 'Inscription réussie', user: data.user });
-});
-
+// Middleware pour vérifier le rôle
 const requireRole = (roles) => (req, res, next) => {
   if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Rôle insuffisant' });
   next();
@@ -145,12 +104,35 @@ app.delete('/products/:id', authenticateToken, requireRole(['admin']), async (re
 
 // Route POST /auth/signup
 app.post('/auth/signup', async (req, res) => {
-  const { email, password, role } = req.body;
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const { data, error } = await supabase.from('users').insert({ email, password_hash: hashedPassword, role }).select().single();
-  if (error) return res.status(400).json({ error });
-  const token = jwt.sign({ id: data.id }, JWT_SECRET, { expiresIn: '1h' });
-  res.json({ token });
+  const { email, password, first_name, last_name } = req.body;
+  if (!email || !password || !first_name || !last_name) {
+    return res.status(400).json({ error: 'Tous les champs sont requis' });
+  }
+  const role = 'customer'; // Par défaut
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { first_name, last_name, role } }
+    });
+    if (error) return res.status(400).json({ error: error.message });
+
+    // Insère dans la table users avec les champs requis
+    const { error: userError } = await supabase
+      .from('users')
+      .insert({ 
+        id: data.user.id, 
+        email, 
+        first_name, 
+        last_name, 
+        role 
+      });
+    if (userError) return res.status(500).json({ error: userError.message });
+
+    res.status(201).json({ message: 'Inscription réussie', user: data.user });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 // Route POST /auth/login
