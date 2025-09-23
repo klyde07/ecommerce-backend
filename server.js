@@ -8,7 +8,7 @@ app.use(express.json());
 app.use(cors());
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Doit être défini via Railway
+  connectionString: process.env.DATABASE_URL,
 });
 
 // Route par défaut
@@ -19,11 +19,14 @@ app.get('/', (req, res) => {
 // Endpoint public pour produits
 app.get('/products', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM products'); // Ajuste selon ta table Supabase
+    const result = await pool.query('SELECT * FROM products'); // Ajuste selon ta table
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Aucun produit trouvé' });
+    }
     res.json(result.rows);
   } catch (err) {
-    console.error('Erreur produits:', err.stack); // Log l'erreur pour debug
-    res.status(500).json({ error: 'Erreur serveur lors du chargement des produits' });
+    console.error('Erreur produits:', err.stack); // Log détaillé
+    res.status(500).json({ error: 'Erreur serveur', details: err.message });
   }
 });
 
@@ -81,7 +84,7 @@ app.post('/orders', async (req, res) => {
   const token = req.headers['authorization']?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token requis' });
   jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
-    if (err) return res.status(503).json({ error: 'Token invalide' });
+    if (err) return res.status(403).json({ error: 'Token invalide' });
     pool.query(
       'INSERT INTO orders (user_id, status) VALUES ($1, $2) RETURNING *',
       [user.id, 'pending'],
