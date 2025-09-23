@@ -6,14 +6,9 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-
-// REMPLACE toute la configuration CORS par :
 app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  origin: process.env.CORS_ORIGIN || 'https://webdigi5-ecommerce-production.up.railway.app'
 }));
-
 app.use(express.json());
 
 const supabaseUrl = process.env.SUPABASE_URL;
