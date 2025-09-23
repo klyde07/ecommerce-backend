@@ -9,6 +9,17 @@ app.use(cors());
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false } // Ajout pour contourner les problèmes SSL
+});
+
+// Test de connexion au démarrage
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('Erreur de connexion à la base:', err.stack);
+  } else {
+    console.log('Connexion à la base réussie');
+    release();
+  }
 });
 
 // Route par défaut
@@ -19,13 +30,13 @@ app.get('/', (req, res) => {
 // Endpoint public pour produits
 app.get('/products', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, base_price FROM products'); // Sélectionne uniquement les champs nécessaires
+    const result = await pool.query('SELECT id, name, base_price FROM products');
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Aucun produit trouvé' });
     }
     res.json(result.rows);
   } catch (err) {
-    console.error('Erreur produits:', err.stack); // Log détaillé
+    console.error('Erreur produits:', err.stack);
     res.status(500).json({ error: 'Erreur serveur', details: err.message });
   }
 });
@@ -96,5 +107,5 @@ app.post('/orders', async (req, res) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080; // Utilise 8080 pour correspondre aux logs
 app.listen(PORT, () => console.log(`Serveur démarré sur port ${PORT}`));
