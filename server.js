@@ -8,29 +8,22 @@ app.use(express.json());
 app.use(cors());
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Supabase connection
+  connectionString: process.env.DATABASE_URL, // Doit être défini via Railway
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
-// Middleware d'authentification
-const authenticateToken = (req, res, next) => {
-  const token = req.headers['authorization']?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Token requis' });
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Token invalide' });
-    req.user = user;
-    next();
-  });
-};
+// Route par défaut
+app.get('/', (req, res) => {
+  res.send('Backend e-commerce opérationnel. Utilisez les API /products, /auth/signup, etc.');
+});
 
 // Endpoint public pour produits
 app.get('/products', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM products');
+    const result = await pool.query('SELECT * FROM products'); // Ajuste selon ta table Supabase
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: 'Erreur serveur' });
+    console.error('Erreur produits:', err.stack); // Log l'erreur pour debug
+    res.status(500).json({ error: 'Erreur serveur lors du chargement des produits' });
   }
 });
 
@@ -40,10 +33,10 @@ app.post('/auth/signup', async (req, res) => {
   try {
     const result = await pool.query(
       'INSERT INTO users (email, password, first_name, last_name) VALUES ($1, $2, $3, $4) RETURNING *',
-      [email, password, first_name, last_name] // Simplifié : hash le password si besoin
+      [email, password, first_name, last_name]
     );
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET);
+    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'your-secret-key');
     res.json({ token });
   } catch (err) {
     res.status(400).json({ error: 'Email déjà utilisé' });
@@ -57,7 +50,7 @@ app.post('/auth/login', async (req, res) => {
     const result = await pool.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
     if (result.rows.length === 0) return res.status(401).json({ error: 'Identifiants incorrects' });
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET);
+    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'your-secret-key');
     res.json({ token });
   } catch (err) {
     res.status(500).json({ error: 'Erreur serveur' });
@@ -65,31 +58,39 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // Ajouter au panier
-app.post('/shopping-carts', authenticateToken, async (req, res) => {
+app.post('/shopping-carts', async (req, res) => {
   const { product_id, quantity } = req.body;
-  try {
-    const result = await pool.query(
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token requis' });
+  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+    if (err) return res.status(403).json({ error: 'Token invalide' });
+    pool.query(
       'INSERT INTO shopping_carts (user_id, product_id, quantity) VALUES ($1, $2, $3) RETURNING *',
-      [req.user.id, product_id, quantity]
+      [user.id, product_id, quantity],
+      (err, result) => {
+        if (err) return res.status(500).json({ error: 'Erreur ajout panier' });
+        res.json(result.rows[0]);
+      }
     );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: 'Erreur ajout panier' });
-  }
+  });
 });
 
 // Passer commande
-app.post('/orders', authenticateToken, async (req, res) => {
+app.post('/orders', async (req, res) => {
   const { items } = req.body;
-  try {
-    const result = await pool.query(
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token requis' });
+  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+    if (err) return res.status(503).json({ error: 'Token invalide' });
+    pool.query(
       'INSERT INTO orders (user_id, status) VALUES ($1, $2) RETURNING *',
-      [req.user.id, 'pending']
+      [user.id, 'pending'],
+      (err, result) => {
+        if (err) return res.status(500).json({ error: 'Erreur commande' });
+        res.json(result.rows[0]);
+      }
     );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: 'Erreur commande' });
-  }
+  });
 });
 
 const PORT = process.env.PORT || 3000;
