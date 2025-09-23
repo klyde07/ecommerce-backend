@@ -19,7 +19,7 @@ app.get('/', (req, res) => {
 // Endpoint public pour produits
 app.get('/products', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM products'); // Ajuste selon ta table
+    const result = await pool.query('SELECT id, name, base_price FROM products'); // Sélectionne uniquement les champs nécessaires
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Aucun produit trouvé' });
     }
